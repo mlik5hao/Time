@@ -1,0 +1,157 @@
+using UnityEngine;
+using System;
+using System.Collections.Generic;
+
+public sealed class TimedTask
+{
+    private static int SeedID = 1000;
+
+    public delegate void TaskAction(params object[] data);
+
+    public sealed class Event
+    {
+        public int ID { get; private set; }
+        public int Type { get; private set; } // 1-超时, 2-定时循环, 3-倒计时, 4-整时回调, 5-每天整时回调.
+        public bool IsValid { get; private set; }
+        public bool IsLoop { get; private set; }
+        private TaskAction action;
+
+        public double TimeStart { get; private set; }
+        public double TimeEnd { get; private set; }
+        public double TimeInterval { get; private set; }
+
+        private double nowTime;
+
+        public Event(double ts, double te, TaskAction act, int type, bool loop)
+        {
+            ID = SeedID++;
+            Type = type;
+            IsValid = true;
+            IsLoop = loop;
+            action = act;
+
+            TimeStart = ts;
+            TimeEnd = te;
+            TimeInterval = TimeEnd - TimeStart;
+
+            if (TimeInterval <= 30 && IsLoop)
+            {
+                Logger.WARN("TimedTask Event Interval Time: ", ID, TimeStart, TimeEnd, TimeInterval, type, IsLoop);
+            }
+        }
+
+        public void Loop(double nt)
+        {
+            nowTime = nt;
+
+            if (!IsValid)
+            {
+                //Logger.ERROR("nt info: ", IsValid, Type, ID);
+                return;
+            }
+
+            //Logger.ERROR("event info: ", TimeStart, TimeEnd, TimeInterval, nowTime);
+
+            if (nowTime >= TimeEnd)
+            {
+                IsValid = IsLoop;
+
+                DoAction();
+
+                if (IsValid)
+                {
+                    TimeEnd += TimeInterval;
+                }
+                return;
+            }
+
+            if (Type == 3) DoAction();
+        }
+
+        public void Cancel()
+        {
+            IsValid = false;
+        }
+
+        public void DoAction()
+        {
+            // DEBUG.
+            if (TimeEnd - nowTime > TimeInterval + 0.5f)
+            {
+                Logger.WARN("trigger timedtask event info: ",
+                               ID,
+                               (TimeEnd - nowTime).ToString("F2"),
+                               TimeInterval.ToString("F2"),
+                               nowTime.ToString("F2"),
+                               TimeStart.ToString("F2"),
+                               TimeEnd.ToString("F2"));
+            }
+            action((int)(TimeEnd - nowTime), (int)TimeInterval, IsValid);
+        }
+    }
+
+    private List<Event> listData;
+
+    public void Init()
+    {
+        listData = new List<Event>();
+        listData.Clear();
+    }
+
+    public void Loop(double nowTime)
+    {
+        if (listData == null || listData.Count <= 0) return;
+        listData.ForEach(e => { e.Loop(nowTime); });
+    }
+
+    public int Add(double ts, double te, TaskAction cb, int type, bool loop)
+    {
+        Event e = new Event(ts, te, cb, type, loop);
+        listData.Add(e);
+        //if (type == 3) e.DoAction();
+        return e.ID;
+    }
+
+    public Event Get(int id)
+    {
+        Event ret = null;
+        foreach (Event e in listData)
+        {
+            if (e.ID == id)
+            {
+                if (e.IsValid) ret = e;
+                break;
+            }
+        }
+        return ret;
+    }
+
+    public void Remove(int id)
+    {
+        foreach (Event e in listData)
+        {
+            if (e.ID == id)
+            {
+                e.Cancel();
+                break;
+            }
+        }
+    }
+
+    public void RemoveInvalid()
+    {
+        // TODO.
+    }
+
+    public void DoAction(int id)
+    {
+        foreach (Event e in listData)
+        {
+            if (e.ID == id)
+            {
+                e.DoAction();
+                break;
+            }
+        }
+    }
+}
